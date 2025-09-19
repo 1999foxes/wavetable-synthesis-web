@@ -1,12 +1,14 @@
-import { initAudio, WavetableOscillator } from './audio.js';
+import { initAudio, WavetableOscillator, wavFileToWavetables } from './audio.js';
 import { startVisualizer } from './visualizer.js';
 
 const playButton = document.getElementById('play');
 const canvas = document.getElementById('scope');
 const blendSlider = document.getElementById('blend');
+const wavInput = document.getElementById('wavimport');
 
 let visualizerStarted = false;
 let wavetableOsc = null;
+const importedWavetables = [];
 
 playButton.addEventListener('click', async () => {
     const { audioContext, analyser } = initAudio();
@@ -43,7 +45,8 @@ playButton.addEventListener('click', async () => {
             }
         }
 
-        wavetableOsc = new WavetableOscillator(audioContext, [sine, saw, square], { frequency: 220 });
+        const initialTables = [sine, saw, square, ...importedWavetables];
+        wavetableOsc = new WavetableOscillator(audioContext, initialTables, { frequency: 220 });
         wavetableOsc.connect(analyser);
         analyser.connect(audioContext.destination);
         wavetableOsc.start();
@@ -69,6 +72,28 @@ if (blendSlider) {
         const value = parseFloat(e.target.value);
         if (!Number.isNaN(value)) {
             wavetableOsc.setPosition(value);
+        }
+    });
+}
+
+if (wavInput) {
+    wavInput.addEventListener('change', async (e) => {
+        const file = e.target.files && e.target.files[0];
+        if (!file) return;
+        try {
+            const wavetables = await wavFileToWavetables(file, { harmonics: 32, windowSize: 2048, count: 10, useAutocorr: false });
+            for (const wt of wavetables) importedWavetables.push(wt);
+            if (wavetableOsc) {
+                for (const wt of wavetables) wavetableOsc.addWavetable(wt);
+                // Move blend near end to audition the newly added windows
+                wavetableOsc.setPosition(1);
+            }
+        } catch (err) {
+            // eslint-disable-next-line no-console
+            console.error('Failed to import WAV as wavetables:', err);
+        } finally {
+            // reset input so selecting the same file again triggers change
+            e.target.value = '';
         }
     });
 }
